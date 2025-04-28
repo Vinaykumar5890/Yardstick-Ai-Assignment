@@ -1,115 +1,92 @@
+const express = require('express') // Import express for creating the server
+const mongoose = require('mongoose') // Import Mongoose for MongoDB connection
+const cors = require('cors') // Import CORS for cross-origin resource sharing
+const Transaction = require('./model') // Import the Transaction model
+const app = express() // Create an instance of express
 
-const express = require('express')
-const {open} = require('sqlite')
-const sqlite3 = require('sqlite3')
-const path = require('path')
-const cors = require('cors')
-const {v4: uuidv4} = require('uuid')
+app.use(express.json()) // Parse JSON bodies
+app.use(cors({origin: '*'})) // Allow all origins
 
-const app = express()
-app.use(express.json())
-app.use(cors({origin: '*'}))
+// MongoDB Connection
 
-// Use a persistent path for the database file
-const databasePath = path.resolve(__dirname, 'contact.db')
-console.log('Using DB at:', databasePath)
+mongoose
+  .connect(
+    'mongodb+srv://user2000:GFmdH0dv1YSt5EwM@cluster0.fv2hjsb.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0',
+  )
+  .then(() => console.log('MongoDB Connected Successfully 🎉'))
+  .catch(err => console.error('MongoDB Connection Failed ❌', err))
 
-let database = null
 
-const initializeDbAndServer = async () => {
+  // Routes
+
+// POST ➔ Create a new Transaction
+app.post('/transactions', async (req, res) => {
   try {
-    database = await open({
-      filename: databasePath,
-      driver: sqlite3.Database,
-    })
-
-    // Enable Write-Ahead Logging to improve persistence
-    await database.run('PRAGMA journal_mode = WAL;')
-
-    // Create table if it doesn't exist
-    await database.run(`
-      CREATE TABLE IF NOT EXISTS contacts (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        email TEXT,
-        contact TEXT
-      )
-    `)
-
-    app.listen(3000, () =>
-      console.log('Server Running at http://localhost:3000/'),
-    )
+    const newTransaction = new Transaction(req.body);
+    const savedTransaction = await newTransaction.save();
+    res.status(201).json(savedTransaction);
   } catch (error) {
-    console.log(`DB Error: ${error.message}`)
-    process.exit(1)
+    res.status(400).json({ error: error.message });
   }
-}
+});
 
-initializeDbAndServer()
-
-// GET all contacts
-app.get('/contacts', async (req, res) => {
+// GET ➔ Fetch all Transactions
+app.get('/transactions', async (req, res) => {
   try {
-    const contacts = await database.all('SELECT * FROM contacts')
-    res.status(200).send(contacts)
-  } catch (err) {
-    res.status(500).send({error: err.message})
+    const transactions = await Transaction.find();
+    res.status(200).json(transactions);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-})
+});
 
-// GET contact by ID
-app.get('/contacts/:id', async (req, res) => {
-  const {id} = req.params
+// GET BY ID ➔ Fetch a Transaction by ID
+app.get('/transactions/:id', async (req, res) => {
   try {
-    const contact = await database.get('SELECT * FROM contacts WHERE id = ?', [
-      id,
-    ])
-    res.status(200).send(contact)
-  } catch (err) {
-    res.status(500).send({error: err.message})
+    const transaction = await Transaction.findById(req.params.id);
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    res.status(200).json(transaction);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-})
+});
 
-// POST new contact
-app.post('/contacts', async (req, res) => {
-  const {name, email, contact} = req.body
-  const id = uuidv4()
+// PUT ➔ Update a Transaction by ID
+app.put('/transactions/:id', async (req, res) => {
   try {
-    await database.run(
-      'INSERT INTO contacts (id, name, email, contact) VALUES (?, ?, ?, ?)',
-      [id, name, email, contact],
-    )
-    console.log('Inserted contact:', {id, name, email, contact})
-    res.status(201).send('Contact Created Successfully')
-  } catch (err) {
-    res.status(500).send({error: err.message})
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!updatedTransaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    res.status(200).json(updatedTransaction);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
-})
+});
 
-// PUT update contact
-app.put('/contacts/:id', async (req, res) => {
-  const {id} = req.params
-  const {name, email, contact} = req.body
+// DELETE ➔ Delete a Transaction by ID
+app.delete('/transactions/:id', async (req, res) => {
   try {
-    await database.run(
-      'UPDATE contacts SET name = ?, email = ?, contact = ? WHERE id = ?',
-      [name, email, contact, id],
-    )
-    res.status(200).send('Contact Updated Successfully')
-  } catch (err) {
-    res.status(500).send({error: err.message})
+    const deletedTransaction = await Transaction.findByIdAndDelete(req.params.id);
+    if (!deletedTransaction) {
+      return res.status(404).json({ message: 'Transaction not found' });
+    }
+    res.status(200).json({ message: 'Transaction deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-})
+});
 
-// DELETE contact
-app.delete('/contacts/:id', async (req, res) => {
-  const {id} = req.params
-  try {
-    await database.run('DELETE FROM contacts WHERE id = ?', [id])
-    res.status(200).send('Contact Deleted Successfully')
-  } catch (err) {
-    res.status(500).send({error: err.message})
-  }
+// Server
+
+app.listen(3000, () => {
+  console.log('Server is running in http://localhost:3000/')
 })
 
 module.exports = app
